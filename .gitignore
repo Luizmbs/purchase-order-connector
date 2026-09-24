@@ -1,0 +1,26 @@
+instructions/*
+steps/*
+.claude/*
+
+# variáveis de ambiente (manter .env.example versionado)
+.env
+.env.*
+
+# cache Python
+*__pycache__*
+*.pyc
+*.pyo
+
+# dependências e build
+.venv/
+*.egg-info/
+dist/
+build/
+
+# testes
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
