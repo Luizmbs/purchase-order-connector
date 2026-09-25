@@ -11,7 +11,7 @@ if config.config_file_name is not None:
 
 # importar modelos para o autogenerate detectar as tabelas
 try:
-    from adapters.outbound.persistence.sqlalchemy_models import Base
+    from adapters.persistence.sqlalchemy_models import Base
     target_metadata = Base.metadata
 except ImportError:
     target_metadata = None
