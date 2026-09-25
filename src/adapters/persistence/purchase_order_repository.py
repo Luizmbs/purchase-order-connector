@@ -155,58 +155,59 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
         return order
 
     async def upsert(self, order: PurchaseOrder) -> None:
-        async with self._session.begin():
-            result = await self._session.execute(
-                select(PurchaseOrderModel).where(
-                    PurchaseOrderModel.client_id == order.client_id,
-                    PurchaseOrderModel.po_number == order.po_number,
+        result = await self._session.execute(
+            select(PurchaseOrderModel).where(
+                PurchaseOrderModel.client_id == order.client_id,
+                PurchaseOrderModel.po_number == order.po_number,
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            existing.status = order.status.value
+            existing.vendor_tax_id = order.vendor_tax_id
+            existing.vendor_name = order.vendor_name
+            existing.currency = order.currency
+            existing.loaded_at = datetime.now(UTC)
+            await self._session.execute(
+                delete(PurchaseOrderItemModel).where(
+                    PurchaseOrderItemModel.purchase_order_id == existing.id
                 )
             )
-            existing = result.scalar_one_or_none()
+            order_id = existing.id
+        else:
+            orm_order = PurchaseOrderModel(
+                id=order.id,
+                client_id=order.client_id,
+                po_number=order.po_number,
+                created_at=order.created_at,
+                status=order.status.value,
+                currency=order.currency,
+                vendor_tax_id=order.vendor_tax_id,
+                vendor_name=order.vendor_name,
+                loaded_at=order.loaded_at,
+            )
+            self._session.add(orm_order)
+            await self._session.flush()
+            order_id = orm_order.id
 
-            if existing:
-                existing.status = order.status.value
-                existing.vendor_tax_id = order.vendor_tax_id
-                existing.vendor_name = order.vendor_name
-                existing.currency = order.currency
-                existing.loaded_at = datetime.now(UTC)
-                await self._session.execute(
-                    delete(PurchaseOrderItemModel).where(
-                        PurchaseOrderItemModel.purchase_order_id == existing.id
-                    )
-                )
-                order_id = existing.id
-            else:
-                orm_order = PurchaseOrderModel(
-                    id=order.id,
-                    client_id=order.client_id,
-                    po_number=order.po_number,
-                    created_at=order.created_at,
-                    status=order.status.value,
-                    currency=order.currency,
-                    vendor_tax_id=order.vendor_tax_id,
-                    vendor_name=order.vendor_name,
-                    loaded_at=order.loaded_at,
-                )
-                self._session.add(orm_order)
-                await self._session.flush()
-                order_id = orm_order.id
+        self._session.add_all([
+            PurchaseOrderItemModel(
+                id=item.id,
+                purchase_order_id=order_id,
+                line=item.line,
+                material=item.material,
+                description=item.description,
+                uom=item.uom,
+                quantity_ordered=item.quantity_ordered,
+                quantity_received=item.quantity_received,
+                unit_price=item.unit_price,
+                item_created_at=item.item_created_at,
+            )
+            for item in order.items
+        ])
 
-            self._session.add_all([
-                PurchaseOrderItemModel(
-                    id=item.id,
-                    purchase_order_id=order_id,
-                    line=item.line,
-                    material=item.material,
-                    description=item.description,
-                    uom=item.uom,
-                    quantity_ordered=item.quantity_ordered,
-                    quantity_received=item.quantity_received,
-                    unit_price=item.unit_price,
-                    item_created_at=item.item_created_at,
-                )
-                for item in order.items
-            ])
+        await self._session.commit()
 
         if self._cache:
             await self._cache.delete(_cache_key(order.client_id, order.po_number))

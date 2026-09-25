@@ -6,6 +6,7 @@ from adapters.persistence.cache_service import CacheService
 from adapters.persistence.conference_repository import PostgresConferenceRepository
 from adapters.persistence.purchase_order_repository import PostgresPurchaseOrderRepository
 from domain.services.conference_service import ConferenceService
+from domain.services.ingestion_service import IngestionService
 from domain.services.invoice_checker import InvoiceChecker
 from domain.services.purchase_order_service import PurchaseOrderService
 from infrastructure.database import get_redis, get_session
@@ -17,6 +18,17 @@ async def get_purchase_order_service(
 ) -> PurchaseOrderService:
     cache = CacheService(redis)
     return PurchaseOrderService(PostgresPurchaseOrderRepository(session, cache))
+
+
+async def get_ingestion_service(
+    session: AsyncSession = Depends(get_session),
+    redis: Redis = Depends(get_redis),
+) -> IngestionService:
+    cache = CacheService(redis)
+    return IngestionService(
+        order_repo=PostgresPurchaseOrderRepository(session, cache),
+        cache=cache,
+    )
 
 
 async def get_conference_service(

@@ -6,13 +6,9 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-import structlog
-
 from adapters.clients.base import ClientAdapter, InputFormat
 from adapters.clients.registry import ClientAdapterRegistry
 from domain.models.purchase_order import OrderStatus, PurchaseOrder, PurchaseOrderItem
-
-log = structlog.get_logger()
 
 STATUS_MAP = {
     "EM ABERTO": OrderStatus.OPEN,
