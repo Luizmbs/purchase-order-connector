@@ -1,18 +1,96 @@
-from datetime import UTC, datetime
-from uuid import uuid4
+import json
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from uuid import UUID
 
+import structlog
 from sqlalchemy import delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from adapters.persistence.cache_service import CacheService
 from adapters.persistence.sqlalchemy_models import PurchaseOrderItemModel, PurchaseOrderModel
 from domain.models.purchase_order import OrderStatus, PurchaseOrder, PurchaseOrderItem
 from domain.ports.outbound.purchase_order_repository import OrderFilters, PurchaseOrderRepository
 
+log = structlog.get_logger()
+
+_PO_TTL = 600  # 10 minutos
+
+
+def _cache_key(client_id: str, po_number: str) -> str:
+    return f"po:{client_id}:{po_number}"
+
+
+def _serialize(order: PurchaseOrder) -> str:
+    def default(obj):
+        if isinstance(obj, (UUID, Decimal, date, datetime)):
+            return str(obj)
+        raise TypeError(f"Not serializable: {type(obj)}")
+
+    data = {
+        "id": str(order.id),
+        "client_id": order.client_id,
+        "po_number": order.po_number,
+        "created_at": str(order.created_at) if order.created_at else None,
+        "status": order.status.value,
+        "currency": order.currency,
+        "vendor_tax_id": order.vendor_tax_id,
+        "vendor_name": order.vendor_name,
+        "loaded_at": order.loaded_at.isoformat(),
+        "items": [
+            {
+                "id": str(i.id),
+                "purchase_order_id": str(i.purchase_order_id),
+                "line": i.line,
+                "material": i.material,
+                "description": i.description,
+                "uom": i.uom,
+                "quantity_ordered": str(i.quantity_ordered),
+                "quantity_received": str(i.quantity_received),
+                "unit_price": str(i.unit_price),
+                "item_created_at": str(i.item_created_at) if i.item_created_at else None,
+            }
+            for i in order.items
+        ],
+    }
+    return json.dumps(data)
+
+
+def _deserialize(raw: str) -> PurchaseOrder:
+    data = json.loads(raw)
+    return PurchaseOrder(
+        id=UUID(data["id"]),
+        client_id=data["client_id"],
+        po_number=data["po_number"],
+        created_at=date.fromisoformat(data["created_at"]) if data["created_at"] else None,
+        status=OrderStatus(data["status"]),
+        currency=data["currency"],
+        vendor_tax_id=data["vendor_tax_id"],
+        vendor_name=data["vendor_name"],
+        loaded_at=datetime.fromisoformat(data["loaded_at"]),
+        items=[
+            PurchaseOrderItem(
+                id=UUID(i["id"]),
+                purchase_order_id=UUID(i["purchase_order_id"]),
+                line=i["line"],
+                material=i["material"],
+                description=i["description"],
+                uom=i["uom"],
+                quantity_ordered=Decimal(i["quantity_ordered"]),
+                quantity_received=Decimal(i["quantity_received"]),
+                unit_price=Decimal(i["unit_price"]),
+                item_created_at=date.fromisoformat(i["item_created_at"]) if i["item_created_at"] else None,
+            )
+            for i in data["items"]
+        ],
+    )
+
 
 class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, cache: CacheService | None = None):
         self._session = session
+        self._cache = cache
 
     async def find_many(
         self, filters: OrderFilters, offset: int, limit: int
@@ -49,6 +127,14 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
     async def find_by_client_and_number(
         self, client_id: str, po_number: str
     ) -> PurchaseOrder | None:
+        if self._cache:
+            key = _cache_key(client_id, po_number)
+            cached = await self._cache.get(key)
+            if cached:
+                log.info("cache.hit", key=key)
+                return _deserialize(cached)
+            log.info("cache.miss", key=key)
+
         result = await self._session.execute(
             select(PurchaseOrderModel)
             .where(
@@ -58,7 +144,15 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
             .options(selectinload(PurchaseOrderModel.items))
         )
         row = result.scalar_one_or_none()
-        return self._to_domain(row) if row else None
+        if row is None:
+            return None
+
+        order = self._to_domain(row)
+
+        if self._cache:
+            await self._cache.set(key, _serialize(order), _PO_TTL)
+
+        return order
 
     async def upsert(self, order: PurchaseOrder) -> None:
         async with self._session.begin():
@@ -113,6 +207,9 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
                 )
                 for item in order.items
             ])
+
+        if self._cache:
+            await self._cache.delete(_cache_key(order.client_id, order.po_number))
 
     def _to_domain(self, orm: PurchaseOrderModel) -> PurchaseOrder:
         return PurchaseOrder(
