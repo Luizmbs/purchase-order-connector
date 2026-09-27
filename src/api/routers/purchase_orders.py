@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 
 from api.dependencies import get_current_user
 from api.schemas.purchase_order import (
+    PurchaseOrderDetail,
     PurchaseOrderListResponse,
     PurchaseOrderSummary,
     build_pagination,
@@ -62,3 +63,24 @@ async def list_purchase_orders(
         data=[_to_summary(o) for o in orders],
         pagination=build_pagination(total, page, page_size),
     )
+
+
+@router.get(
+    "/purchase-orders/{client_id}/{po_number}",
+    response_model=PurchaseOrderDetail,
+)
+async def get_purchase_order(
+    client_id: str = Path(...),
+    po_number: str = Path(...),
+    response: Response = None,
+    _=Depends(get_current_user),
+    service: PurchaseOrderService = Depends(get_purchase_order_service),
+):
+    order, from_cache = await service.get_order(client_id, po_number)
+    if order is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Pedido '{po_number}' não encontrado para o cliente '{client_id}'",
+        )
+    response.headers["X-Cache"] = "HIT" if from_cache else "MISS"
+    return PurchaseOrderDetail.model_validate(order)

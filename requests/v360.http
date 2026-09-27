@@ -119,6 +119,10 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/purchase-orders?client_id=alfa&status=open&page=1&page_size=5
 Authorization: Bearer {{token}}
 
+### Detalhe de um pedido
+GET {{baseUrl}}/purchase-orders/alfa/4500001234
+Authorization: Bearer {{token}}
+
 # ── 4. HEALTH ────────────────────────────────────────────────
 
 ### Health check
