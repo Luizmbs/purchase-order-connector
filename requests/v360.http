@@ -123,7 +123,39 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/purchase-orders/alfa/4500001234
 Authorization: Bearer {{token}}
 
-# ── 4. HEALTH ────────────────────────────────────────────────
+# ── 4. CONFERÊNCIAS ──────────────────────────────────────────
+
+### Conferir nota (aprovada)
+POST {{baseUrl}}/conferences
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "client_id": "alfa",
+  "po_number": "4500001234",
+  "invoice_number": "NF-99001",
+  "vendor_tax_id": "23456789000101",
+  "items": [
+    { "material": "MAT-1001", "quantity": 40, "total_value": 1836.00 }
+  ]
+}
+
+### Conferir nota (quantidade excedida)
+POST {{baseUrl}}/conferences
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "client_id": "alfa",
+  "po_number": "4500001234",
+  "invoice_number": "NF-99002",
+  "vendor_tax_id": "23456789000101",
+  "items": [
+    { "material": "MAT-1001", "quantity": 999, "total_value": 45855.10 }
+  ]
+}
+
+# ── 5. HEALTH ────────────────────────────────────────────────
 
 ### Health check
 GET http://localhost:8000/health

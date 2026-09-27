@@ -6,6 +6,7 @@ from uuid import UUID
 
 class DivergenceType(str, Enum):
     ORDER_NOT_FOUND = "order_not_found"
+    ORDER_NOT_OPEN = "order_not_open"
     VENDOR_MISMATCH = "vendor_mismatch"
     MATERIAL_NOT_FOUND = "material_not_found"
     QUANTITY_EXCEEDED = "quantity_exceeded"

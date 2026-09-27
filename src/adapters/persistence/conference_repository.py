@@ -12,32 +12,33 @@ class PostgresConferenceRepository(ConferenceRepository):
         self._session = session
 
     async def save(self, conference: Conference) -> None:
-        async with self._session.begin():
-            orm = ConferenceModel(
-                id=conference.id,
-                purchase_order_id=conference.purchase_order_id,
-                client_id=conference.client_id,
-                po_number=conference.po_number,
-                invoice_number=conference.invoice_number,
-                vendor_tax_id=conference.vendor_tax_id,
-                result=conference.result.value,
-                checked_at=conference.checked_at,
-            )
-            self._session.add(orm)
-            await self._session.flush()
+        orm = ConferenceModel(
+            id=conference.id,
+            purchase_order_id=conference.purchase_order_id,
+            client_id=conference.client_id,
+            po_number=conference.po_number,
+            invoice_number=conference.invoice_number,
+            vendor_tax_id=conference.vendor_tax_id,
+            result=conference.result.value,
+            checked_at=conference.checked_at,
+        )
+        self._session.add(orm)
+        await self._session.flush()
 
-            self._session.add_all([
-                ConferenceDivergenceModel(
-                    conference_id=conference.id,
-                    type=d.type.value,
-                    item_line=d.item_line,
-                    material=d.material,
-                    expected=d.expected,
-                    received=d.received,
-                    detail=d.detail,
-                )
-                for d in conference.divergences
-            ])
+        self._session.add_all([
+            ConferenceDivergenceModel(
+                conference_id=conference.id,
+                type=d.type.value,
+                item_line=d.item_line,
+                material=d.material,
+                expected=d.expected,
+                received=d.received,
+                detail=d.detail,
+            )
+            for d in conference.divergences
+        ])
+
+        await self._session.commit()
 
     async def find_many(
         self, filters: ConferenceFilters, offset: int, limit: int

@@ -21,6 +21,16 @@ class InvoiceChecker:
                 )
             ]
 
+        if order.status.value != "open":
+            return [
+                ConferenceDivergence(
+                    type=DivergenceType.ORDER_NOT_OPEN,
+                    expected="open",
+                    received=order.status.value,
+                    detail=f"Pedido {invoice.po_number} não está em aberto (situação atual: {order.status.value})",
+                )
+            ]
+
         divergences: list[ConferenceDivergence] = []
 
         if invoice.vendor_tax_id != order.vendor_tax_id:
@@ -65,7 +75,7 @@ class InvoiceChecker:
                     )
                 )
 
-            if abs(invoice_item.unit_price - order_item.unit_price) > self.PRICE_TOLERANCE:
+            if abs(invoice_item.unit_price - order_item.unit_price) >= self.PRICE_TOLERANCE:
                 divergences.append(
                     ConferenceDivergence(
                         type=DivergenceType.PRICE_MISMATCH,

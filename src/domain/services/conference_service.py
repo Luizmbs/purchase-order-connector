@@ -20,7 +20,7 @@ class ConferenceService:
         self._checker = checker
 
     async def check_invoice(self, invoice: Invoice) -> Conference:
-        order = await self._order_repo.find_by_client_and_number(
+        order, _ = await self._order_repo.find_by_client_and_number(
             invoice.client_id, invoice.po_number
         )
 
