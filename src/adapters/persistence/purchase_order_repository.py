@@ -126,13 +126,13 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
 
     async def find_by_client_and_number(
         self, client_id: str, po_number: str
-    ) -> PurchaseOrder | None:
+    ) -> tuple[PurchaseOrder | None, bool]:
         if self._cache:
             key = _cache_key(client_id, po_number)
             cached = await self._cache.get(key)
             if cached:
                 log.info("cache.hit", key=key)
-                return _deserialize(cached)
+                return _deserialize(cached), True
             log.info("cache.miss", key=key)
 
         result = await self._session.execute(
@@ -145,14 +145,14 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
         )
         row = result.scalar_one_or_none()
         if row is None:
-            return None
+            return None, False
 
         order = self._to_domain(row)
 
         if self._cache:
             await self._cache.set(key, _serialize(order), _PO_TTL)
 
-        return order
+        return order, False
 
     async def upsert(self, order: PurchaseOrder) -> None:
         result = await self._session.execute(

@@ -19,5 +19,5 @@ class PurchaseOrderService:
         self,
         client_id: str,
         po_number: str,
-    ) -> PurchaseOrder | None:
+    ) -> tuple[PurchaseOrder | None, bool]:
         return await self._repo.find_by_client_and_number(client_id, po_number)

@@ -30,7 +30,7 @@ class IngestionService:
         for order in orders:
             client_id = order.client_id
             try:
-                existing = await self._repo.find_by_client_and_number(
+                existing, _ = await self._repo.find_by_client_and_number(
                     order.client_id, order.po_number
                 )
                 await self._repo.upsert(order)
