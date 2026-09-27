@@ -103,12 +103,12 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
             base = base.where(PurchaseOrderModel.vendor_tax_id == filters.vendor_tax_id)
         if filters.status:
             base = base.where(PurchaseOrderModel.status == filters.status.value)
-        if filters.has_pending:
+        if filters.has_pending is not None:
             pending_exists = exists().where(
                 PurchaseOrderItemModel.purchase_order_id == PurchaseOrderModel.id,
                 PurchaseOrderItemModel.quantity_ordered - PurchaseOrderItemModel.quantity_received > 0,
             )
-            base = base.where(pending_exists)
+            base = base.where(pending_exists if filters.has_pending else ~pending_exists)
 
         total_result = await self._session.execute(select(func.count()).select_from(base.subquery()))
         total = total_result.scalar_one()
