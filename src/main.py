@@ -6,6 +6,7 @@ from api.middleware.logging import LoggingMiddleware
 from api.routers.auth import router as auth_router
 from api.routers.health import router as health_router
 from api.routers.ingest import router as ingest_router
+from api.routers.purchase_orders import router as purchase_orders_router
 from infrastructure.logging_config import configure_logging
 
 
@@ -26,3 +27,4 @@ app.add_middleware(LoggingMiddleware)
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(ingest_router)
+app.include_router(purchase_orders_router)

@@ -101,7 +101,25 @@ NUMERO_PEDIDO;ITEM;CODIGO_MATERIAL;DESCRICAO;UNIDADE;QTD_PEDIDA;QTD_RECEBIDA;PRE
 20260088413;1;MAT-91;Carne bovina dianteiro kg;KG;2.000,000;0,000;27,90
 ------Boundary--
 
-# ── 3. HEALTH ────────────────────────────────────────────────
+# ── 3. PEDIDOS ───────────────────────────────────────────────
+
+### Listar todos os pedidos
+GET {{baseUrl}}/purchase-orders
+Authorization: Bearer {{token}}
+
+### Listar pedidos em aberto
+GET {{baseUrl}}/purchase-orders?status=open
+Authorization: Bearer {{token}}
+
+### Listar com saldo pendente
+GET {{baseUrl}}/purchase-orders?has_pending=true&page=1&page_size=5
+Authorization: Bearer {{token}}
+
+### Filtrar por cliente + status + paginação
+GET {{baseUrl}}/purchase-orders?client_id=alfa&status=open&page=1&page_size=5
+Authorization: Bearer {{token}}
+
+# ── 4. HEALTH ────────────────────────────────────────────────
 
 ### Health check
 GET http://localhost:8000/health
