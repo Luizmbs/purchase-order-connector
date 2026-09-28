@@ -1,8 +1,12 @@
 from decimal import Decimal
 
+import structlog
+
 from domain.models.conference import ConferenceDivergence, DivergenceType
 from domain.models.invoice import Invoice
 from domain.models.purchase_order import PurchaseOrder
+
+log = structlog.get_logger()
 
 
 class InvoiceChecker:
@@ -14,6 +18,11 @@ class InvoiceChecker:
         invoice: Invoice,
     ) -> list[ConferenceDivergence]:
         if order is None:
+            log.warning(
+                "checker.order_not_found",
+                client_id=invoice.client_id,
+                po_number=invoice.po_number,
+            )
             return [
                 ConferenceDivergence(
                     type=DivergenceType.ORDER_NOT_FOUND,
@@ -22,6 +31,12 @@ class InvoiceChecker:
             ]
 
         if order.status.value != "open":
+            log.warning(
+                "checker.order_not_open",
+                client_id=invoice.client_id,
+                po_number=invoice.po_number,
+                status=order.status.value,
+            )
             return [
                 ConferenceDivergence(
                     type=DivergenceType.ORDER_NOT_OPEN,
@@ -34,7 +49,13 @@ class InvoiceChecker:
         divergences: list[ConferenceDivergence] = []
 
         if invoice.vendor_tax_id != order.vendor_tax_id:
-            # O fluxo continua quando os CNPJs são diferentes para casos em que houve mudança de CNPJ do fornecedor
+            log.warning(
+                "checker.vendor_mismatch",
+                client_id=invoice.client_id,
+                po_number=invoice.po_number,
+                expected=order.vendor_tax_id,
+                received=invoice.vendor_tax_id,
+            )
             divergences.append(
                 ConferenceDivergence(
                     type=DivergenceType.VENDOR_MISMATCH,
@@ -50,6 +71,12 @@ class InvoiceChecker:
             order_item = order_items_by_material.get(invoice_item.material)
 
             if order_item is None:
+                log.warning(
+                    "checker.material_not_found",
+                    client_id=invoice.client_id,
+                    po_number=invoice.po_number,
+                    material=invoice_item.material,
+                )
                 divergences.append(
                     ConferenceDivergence(
                         type=DivergenceType.MATERIAL_NOT_FOUND,
@@ -61,6 +88,15 @@ class InvoiceChecker:
                 continue
 
             if invoice_item.quantity > order_item.quantity_pending:
+                log.warning(
+                    "checker.quantity_exceeded",
+                    client_id=invoice.client_id,
+                    po_number=invoice.po_number,
+                    material=order_item.material,
+                    line=order_item.line,
+                    pending=str(order_item.quantity_pending),
+                    received=str(invoice_item.quantity),
+                )
                 divergences.append(
                     ConferenceDivergence(
                         type=DivergenceType.QUANTITY_EXCEEDED,
@@ -76,6 +112,15 @@ class InvoiceChecker:
                 )
 
             if abs(invoice_item.unit_price - order_item.unit_price) >= self.PRICE_TOLERANCE:
+                log.warning(
+                    "checker.price_mismatch",
+                    client_id=invoice.client_id,
+                    po_number=invoice.po_number,
+                    material=order_item.material,
+                    line=order_item.line,
+                    expected=str(order_item.unit_price),
+                    received=str(invoice_item.unit_price),
+                )
                 divergences.append(
                     ConferenceDivergence(
                         type=DivergenceType.PRICE_MISMATCH,

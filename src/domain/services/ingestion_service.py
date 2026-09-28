@@ -102,14 +102,23 @@ class IngestionService:
     async def ingest(self, adapter: ClientAdapter, raw_data) -> IngestionResult:
         parse_result = adapter.parse(raw_data)
 
+        client_id = parse_result.orders[0].client_id if parse_result.orders else "unknown"
+
+        log.info(
+            "ingest.start",
+            client_id=client_id,
+            orders_count=len(parse_result.orders),
+        )
+
+        for warning in parse_result.warnings:
+            log.warning("ingest.parse_warning", client_id=client_id, detail=warning)
+
         ingested = 0
         updated = 0
         errors = []
         order_updates: list[OrderUpdate] = []
-        client_id = None
 
         for order in parse_result.orders:
-            client_id = order.client_id
             try:
                 existing, _ = await self._repo.find_by_client_and_number(
                     order.client_id, order.po_number
@@ -117,26 +126,44 @@ class IngestionService:
                 await self._repo.upsert(order)
                 if existing:
                     updated += 1
+                    changes = _diff_orders(existing, order)
                     order_updates.append(OrderUpdate(
                         po_number=order.po_number,
                         client_id=order.client_id,
-                        changes=_diff_orders(existing, order),
+                        changes=changes,
                     ))
+                    log.info(
+                        "ingest.order_updated",
+                        client_id=order.client_id,
+                        po_number=order.po_number,
+                        changes_count=len(changes),
+                    )
                 else:
                     ingested += 1
+                    log.info(
+                        "ingest.order_created",
+                        client_id=order.client_id,
+                        po_number=order.po_number,
+                    )
             except Exception as e:
                 errors.append({"po_number": order.po_number, "error": str(e)})
-                log.error("ingest.item_error", po_number=order.po_number, error=str(e))
+                log.error(
+                    "ingest.order_error",
+                    client_id=order.client_id,
+                    po_number=order.po_number,
+                    error=str(e),
+                )
 
-        if client_id:
+        if parse_result.orders:
             await self._cache.delete_pattern(f"po:{client_id}:*")
 
         log.info(
             "ingest.completed",
-            client_id=client_id or "unknown",
+            client_id=client_id,
             ingested=ingested,
             updated=updated,
             errors=len(errors),
+            warnings=len(parse_result.warnings),
         )
 
         return IngestionResult(
