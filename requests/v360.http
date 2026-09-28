@@ -163,7 +163,33 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/conferences?client_id=alfa&result=rejected
 Authorization: Bearer {{token}}
 
-# ── 5. HEALTH ────────────────────────────────────────────────
+# ── 5. ADMIN — CLIENTES ──────────────────────────────────────
+
+### Listar clientes
+GET {{baseUrl}}/admin/clients
+Authorization: Bearer {{token}}
+
+### Criar cliente
+POST {{baseUrl}}/admin/clients
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id": "epsilon",
+  "name": "Epsilon Tecnologia",
+  "format_type": "json_nested"
+}
+
+### Desativar cliente
+PATCH {{baseUrl}}/admin/clients/epsilon
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+# ── 6. HEALTH ────────────────────────────────────────────────
 
 ### Health check
 GET http://localhost:8000/health
