@@ -37,6 +37,18 @@ services:
     volumes:
       - redis_data:/data
 
+  locust:
+    build: .
+    command: locust -f tests/load/locustfile.py --host http://api:8000 --web-host 0.0.0.0
+    ports:
+      - "8089:8089"
+    volumes:
+      - .:/app
+    depends_on:
+      - api
+    profiles:
+      - load
+
 volumes:
   postgres_data:
   redis_data:
