@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 
-from domain.models.purchase_order import PurchaseOrder
+from domain.models.purchase_order import PurchaseOrder, PurchaseOrderItem
 
 
 class InputFormat(Enum):
@@ -14,6 +14,9 @@ class InputFormat(Enum):
 class ParseResult:
     orders: list[PurchaseOrder]
     warnings: list[str] = field(default_factory=list)
+    # Itens cujo pedido não veio no payload atual (ex: Delta com duas queries defasadas).
+    # O service resolve: se o pedido existe no banco, atualiza; senão, descarta com warning.
+    orphan_items: dict[str, list[PurchaseOrderItem]] = field(default_factory=dict)
 
 
 class ClientAdapter(ABC):

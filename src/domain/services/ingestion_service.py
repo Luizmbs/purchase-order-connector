@@ -1,4 +1,6 @@
+import dataclasses
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import structlog
 
@@ -102,7 +104,9 @@ class IngestionService:
     async def ingest(self, adapter: ClientAdapter, raw_data) -> IngestionResult:
         parse_result = adapter.parse(raw_data)
 
-        client_id = parse_result.orders[0].client_id if parse_result.orders else "unknown"
+        client_id = getattr(adapter, "CLIENT_ID", None) or (
+            parse_result.orders[0].client_id if parse_result.orders else "unknown"
+        )
 
         log.info(
             "ingest.start",
@@ -154,7 +158,48 @@ class IngestionService:
                     error=str(e),
                 )
 
-        if parse_result.orders:
+        # Resolve itens órfãos (pedido não veio no payload mas pode existir no banco)
+        for po_number, orphan_items in parse_result.orphan_items.items():
+            try:
+                existing, _ = await self._repo.find_by_client_and_number(client_id, po_number)
+                if existing is None:
+                    warning = (
+                        f"Itens do pedido '{po_number}' descartados: "
+                        f"pedido não encontrado no banco nem no payload"
+                    )
+                    parse_result.warnings.append(warning)
+                    log.warning("ingest.orphan_discarded", client_id=client_id, po_number=po_number)
+                else:
+                    # Mescla por linha: preserva itens existentes, adiciona/sobrescreve pelos órfãos
+                    merged_by_line = {item.line: item for item in existing.items}
+                    for item in orphan_items:
+                        merged_by_line[item.line] = dataclasses.replace(
+                            item, purchase_order_id=existing.id
+                        )
+                    updated_order = dataclasses.replace(
+                        existing,
+                        items=list(merged_by_line.values()),
+                        loaded_at=datetime.now(timezone.utc),
+                    )
+                    changes = _diff_orders(existing, updated_order)
+                    await self._repo.upsert(updated_order)
+                    updated += 1
+                    order_updates.append(OrderUpdate(
+                        po_number=po_number,
+                        client_id=client_id,
+                        changes=changes,
+                    ))
+                    log.info(
+                        "ingest.order_updated",
+                        client_id=client_id,
+                        po_number=po_number,
+                        changes_count=len(changes),
+                    )
+            except Exception as e:
+                errors.append({"po_number": po_number, "error": str(e)})
+                log.error("ingest.order_error", client_id=client_id, po_number=po_number, error=str(e))
+
+        if parse_result.orders or parse_result.orphan_items:
             await self._cache.delete_pattern(f"po:{client_id}:*")
 
         log.info(

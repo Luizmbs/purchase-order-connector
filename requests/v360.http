@@ -20,7 +20,7 @@ Content-Type: application/json
 
 ###
 
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMGVlYmM5OS05YzBiLTRlZjgtYmI2ZC02YmI5YmQzODBhMTEiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3OTAzNjUxMzl9.geNzqU4TKZGH2-H7R7iHTjji6aamu_zzlCSo1ticbmw
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhMGVlYmM5OS05YzBiLTRlZjgtYmI2ZC02YmI5YmQzODBhMTEiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3OTA2MjkzOTR9.tz4HXVHWRFvWZB6WYnKfDs2YiDOgT85NzUsxRmyHyi4
 
 ### Refresh token
 POST {{baseUrl}}/auth/refresh
@@ -35,7 +35,7 @@ POST {{baseUrl}}/auth/logout
 Content-Type: application/json
 
 {
-  "refresh_token": "COLE_O_REFRESH_TOKEN"
+  "refresh_token": "TTxNxJudniRtTG9O1cpib3ZK-V0US9rLJ6Wcz-ZvVUgyDqu_SFRiGfVrwKhWKep5ImVZU7CRtXqzfrGCYo_SYQ"
 }
 
 # ── 2. INGESTÃO ──────────────────────────────────────────────
@@ -132,6 +132,87 @@ Content-Type: application/json
 ]
 
 
+### Ingerir Delta Distribuição (JSON com dois arrays: orders + items)
+# O sistema do Delta expõe duas consultas separadas (pedidos e itens).
+# O caller coleta as duas e envia num único body para o nosso endpoint.
+# Itens cujo purchase_order não existe em orders são descartados com warning.
+POST {{baseUrl}}/ingest/delta
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "orders": [
+    {
+      "po_number": "DL-2026-0044",
+      "created_at": "2026-09-02",
+      "status": "open",
+      "currency": "BRL",
+      "vendor": { "tax_id": "67890123000145", "name": "Embalagens Norte Sul Ltda" }
+    },
+    {
+      "po_number": "DL-2026-0045",
+      "created_at": "2026-08-28",
+      "status": "closed",
+      "currency": "BRL",
+      "vendor": { "tax_id": "78901234000156", "name": "Papelaria Central S.A." }
+    },
+    {
+      "po_number": "DL-2026-0046",
+      "created_at": "2026-09-10",
+      "status": "open",
+      "currency": "BRL",
+      "vendor": { "tax_id": "67890123000145", "name": "Embalagens Norte Sul Ltda" }
+    }
+  ],
+  "items": [
+    {
+      "purchase_order": "DL-2026-0044",
+      "created_at": "2026-09-02",
+      "line": 10,
+      "material": "EMB-500",
+      "description": "Caixa papelão 40x30",
+      "uom": "UN",
+      "quantity_ordered": 800,
+      "quantity_received": 300,
+      "unit_price": 3.75
+    },
+    {
+      "purchase_order": "DL-2026-0044",
+      "created_at": "2026-09-08",
+      "line": 20,
+      "material": "EMB-720",
+      "description": "Fita adesiva 48mm",
+      "uom": "UN",
+      "quantity_ordered": 240,
+      "quantity_received": 0,
+      "unit_price": 8.2
+    },
+    {
+      "purchase_order": "DL-2026-0045",
+      "created_at": "2026-08-28",
+      "line": 10,
+      "material": "PAP-100",
+      "description": "Papel A4 resma 500 folhas",
+      "uom": "UN",
+      "quantity_ordered": 150,
+      "quantity_received": 150,
+      "unit_price": 24.9
+    },
+    {
+      "purchase_order": "DL-2026-0099",
+      "created_at": "2026-09-15",
+      "line": 10,
+      "material": "EMB-500",
+      "description": "Caixa papelão 40x30 (órfão — pedido não existe em orders)",
+      "uom": "UN",
+      "quantity_ordered": 100,
+      "quantity_received": 0,
+      "unit_price": 3.75
+    }
+  ]
+}
+
+
 ### Ingerir Beta Alimentos (multipart — requer dois arquivos CSV)
 # Salve os arquivos abaixo como cabecalho.csv e itens.csv e ajuste os caminhos
 POST {{baseUrl}}/ingest/beta
@@ -183,6 +264,10 @@ Authorization: Bearer {{token}}
 
 ### Detalhe de um pedido Gama
 GET {{baseUrl}}/purchase-orders/gama/GL-778
+Authorization: Bearer {{token}}
+
+### Detalhe de um pedido Delta
+GET {{baseUrl}}/purchase-orders/delta/DL-2026-0044
 Authorization: Bearer {{token}}
 
 # ── 4. CONFERÊNCIAS ──────────────────────────────────────────
