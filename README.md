@@ -86,6 +86,8 @@ Todos os endpoints abaixo exigem o header `Authorization: Bearer <token>`.
 ```
 POST /api/v1/ingest/alfa         JSON com pedidos aninhados (Alfa Energia)
 POST /api/v1/ingest/beta         Multipart com dois campos: cabecalho e itens (Beta Alimentos)
+POST /api/v1/ingest/gama         JSON flat — array de linhas, uma por item (Gama Logística)
+POST /api/v1/ingest/delta        JSON com dois arrays: orders e items (Delta Distribuição)
 ```
 
 Resposta de ingestão:
@@ -163,7 +165,7 @@ src/
 └── infrastructure/   # Config (pydantic-settings), engine do banco, DI
 ```
 
-Para os adapters de cliente usei **Strategy + Registry/Factory Method**: cada adapter (`AlfaAdapter`, `BetaAdapter`) implementa a interface `ClientAdapter` (Strategy) e se auto-registra num dicionário central ao ser importado (Registry). O endpoint de ingestão solicita o adapter pelo `client_id` e o Registry devolve a instância correta (Factory Method) — sem conhecer nenhum adapter concreto.
+Para os adapters de cliente usei **Strategy + Registry/Factory Method**: cada adapter (`AlfaAdapter`, `BetaAdapter`, `GamaAdapter`, `DeltaAdapter`) implementa a interface `ClientAdapter` (Strategy) e se auto-registra num dicionário central ao ser importado (Registry). O endpoint de ingestão solicita o adapter pelo `client_id` e o Registry devolve a instância correta (Factory Method) — sem conhecer nenhum adapter concreto.
 
 ```python
 # Cada adapter se registra ao ser importado:
@@ -297,6 +299,33 @@ Dois CSVs com separador `;` no padrão brasileiro:
 
 Itens cujo `NUMERO_PEDIDO` não corresponde a nenhum cabeçalho são descartados com um aviso explícito no campo `warnings` da resposta (em vez de falha silenciosa).
 
+### Gama Logística
+
+JSON flat — uma linha por item, sem cabeçalho separado de pedido:
+
+- **Agrupamento:** linhas agrupadas pelo campo `ped` para montar pedidos com itens
+- **Timestamp Unix:** `dt_criacao` convertido com `datetime.fromtimestamp(ts, tz=UTC).date()`
+- **Centavos:** `preco_unit_centavos / 100 / fator_conv` → R$ por unidade individual
+- **Fator de conversão:** `qtd_ped * fator_conv` e `qtd_rec * fator_conv` → unidades individuais
+- **Status numérico:** `1` → `open`, `2` → `closed`, `3` → `blocked`
+- **UOM armazenado como `UN`:** após a conversão as quantidades estão em unidades individuais, armazenar "CX" seria inconsistente
+
+**Exemplo de conversão:** item com `qtd_ped=10`, `fator_conv=12`, `preco_unit_centavos=120000` vira `quantity_ordered=120 UN` e `unit_price=R$100,00/UN`.
+
+### Delta Distribuição
+
+Dois arrays separados no mesmo payload JSON (`orders` + `items`):
+
+- O sistema do Delta expõe duas consultas independentes; o caller as coleta e envia num único body
+- O join é feito pelo campo `purchase_order` de cada item, que aponta para o `po_number` do cabeçalho
+- **Pedido sem itens:** mantido — é um estado válido (pedido criado antes das linhas serem lançadas)
+- **Item sem pedido no payload (órfão):**
+  - Se o pedido existe no banco (ingestão anterior): o item é **mesclado por número de linha** — itens existentes são preservados, o órfão é adicionado ou sobrescreve a linha correspondente
+  - Se não existe em lugar nenhum: descartado com `warning` na resposta
+- **`item_created_at`:** data individual de cada linha, salva na coluna `item_created_at` de `purchase_order_items`; pode ser posterior à data do cabeçalho quando uma linha é incluída depois
+
+**Por que mesclar em vez de substituir para órfãos?** A substituição total (estratégia padrão de reingestão) faz sentido quando o payload representa um snapshot completo do pedido. No caso do órfão, o payload traz apenas itens novos ou atualizados — substituir apagaria itens válidos que vieram em cargas anteriores.
+
 ---
 
 ## Logs estruturados
@@ -316,4 +345,36 @@ Pontos de log relevantes por fluxo:
 ## Cache
 
 Pedidos individuais (`GET /purchase-orders/{client_id}/{po_number}`) são cacheados no Redis com TTL de 5 minutos. O header `X-Cache: HIT/MISS` indica a origem da resposta. O cache de um cliente é invalidado integralmente a cada ingestão, garantindo consistência.
+
+---
+
+## Parte 2 — o que mudou
+
+### O que foi só adicionar
+
+- **`GamaAdapter`** e **`DeltaAdapter`**: novos arquivos em `src/adapters/clients/gama/` e `src/adapters/clients/delta/`. O endpoint de ingestão, o service e os repositórios não foram tocados — o padrão Registry garantiu isso.
+- **Registro:** uma linha em `src/adapters/clients/__init__.py` por adapter.
+- **Testes:** novos arquivos de testes unitários e de integração sem alterar os existentes.
+
+### O que exigiu mexer no que já existia
+
+- **`ParseResult`** (`src/adapters/clients/base.py`): adicionado o campo `orphan_items` para que o Delta pudesse sinalizar itens sem pedido correspondente no payload sem descartar prematuramente — a decisão final (checar banco) pertence ao service.
+- **`IngestionService`** (`src/domain/services/ingestion_service.py`): adicionado o bloco de resolução de órfãos após o loop principal. O service consulta o banco, mescla por número de linha e faz o upsert.
+- **Banco:** nenhuma migração necessária. A coluna `item_created_at` em `purchase_order_items` já existia desde a Parte 1 antecipando o Delta. O modelo de dados aguentou os dois novos clientes sem alteração.
+
+### Se um quinto cliente chegasse (ex: XML)
+
+Bastaria criar `src/adapters/clients/epsilon/adapter.py`, implementar `ClientAdapter.parse()` com um parser XML (ex: `xml.etree.ElementTree`), e registrar `ClientAdapterRegistry.register("epsilon", EpsilonAdapter)`. Nenhum código existente precisaria ser alterado — é exatamente o que o padrão Strategy + Registry foi projetado para garantir.
+
+---
+
+## O que faria diferente com mais tempo
+
+**Rate limiting:** sem ele, um cliente mal configurado pode inundar a API de ingestão com batches enormes. Adicionaria um limitador por `client_id` no endpoint de ingestão.
+
+**Ingestão assíncrona:** para batches grandes, retornar imediatamente um `job_id` e processar em background (Celery/ARQ) evitaria timeouts e daria rastreabilidade por job.
+
+**Cursor-based cache invalidation:** hoje invalido todo o cache do cliente a cada ingestão. Se o cliente tem milhares de pedidos cacheados e só 10 mudaram, isso é desperdício. O diff de reingestão (`updates`) já sabe quais pedidos mudaram — daria para invalidar só eles.
+
+**Cobertura de testes do repositório:** os testes de integração cobrem os endpoints mas não exercitam diretamente erros do banco (constraint violations, timeouts). Testes de repositório isolados dariam cobertura mais granular.
 
