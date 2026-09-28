@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from api.schemas.purchase_order import PaginationMeta, build_pagination
+from api.schemas.purchase_order import CursorPaginationMeta
 
 
 class InvoiceItemRequest(BaseModel):
@@ -50,4 +50,4 @@ class ConferenceSummary(BaseModel):
 
 class ConferenceListResponse(BaseModel):
     data: list[ConferenceSummary]
-    pagination: PaginationMeta
+    pagination: CursorPaginationMeta

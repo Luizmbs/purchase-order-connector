@@ -1,6 +1,5 @@
 from datetime import date, datetime
 from decimal import Decimal
-from math import ceil
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -20,18 +19,16 @@ class PurchaseOrderSummary(BaseModel):
     has_pending: bool
 
 
-class PaginationMeta(BaseModel):
-    page: int
+class CursorPaginationMeta(BaseModel):
     page_size: int
-    total: int
-    total_pages: int
     has_next: bool
     has_prev: bool
+    next_cursor: str | None
 
 
 class PurchaseOrderListResponse(BaseModel):
     data: list[PurchaseOrderSummary]
-    pagination: PaginationMeta
+    pagination: CursorPaginationMeta
 
 
 class PurchaseOrderItemDetail(BaseModel):
@@ -61,15 +58,3 @@ class PurchaseOrderDetail(BaseModel):
     vendor_name: str | None
     loaded_at: datetime
     items: list[PurchaseOrderItemDetail]
-
-
-def build_pagination(total: int, page: int, page_size: int) -> PaginationMeta:
-    total_pages = ceil(total / page_size) if page_size else 0
-    return PaginationMeta(
-        page=page,
-        page_size=page_size,
-        total=total,
-        total_pages=total_pages,
-        has_next=page < total_pages,
-        has_prev=page > 1,
-    )

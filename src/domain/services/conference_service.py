@@ -76,17 +76,17 @@ class ConferenceService:
     async def list_conferences(
         self,
         filters: ConferenceFilters,
-        page: int,
+        cursor: str | None,
         page_size: int,
-    ) -> tuple[list[Conference], int]:
-        offset = (page - 1) * page_size
-        conferences, total = await self._conference_repo.find_many(filters, offset, page_size)
+    ) -> tuple[list[Conference], str | None]:
+        conferences, next_cursor = await self._conference_repo.find_many(filters, cursor, page_size)
         log.info(
             "conference.list",
-            total=total,
-            page=page,
+            count=len(conferences),
+            has_next=next_cursor is not None,
+            has_prev=cursor is not None,
             page_size=page_size,
             filter_result=filters.result,
             filter_client_id=filters.client_id,
         )
-        return conferences, total
+        return conferences, next_cursor

@@ -9,8 +9,8 @@ from api.schemas.conference import (
     ConferenceResponse,
     ConferenceSummary,
     DivergenceResponse,
-    build_pagination,
 )
+from api.schemas.purchase_order import CursorPaginationMeta
 from domain.models.conference import Conference, ConferenceResult
 from domain.models.invoice import Invoice, InvoiceItem
 from domain.ports.outbound.conference_repository import ConferenceFilters
@@ -73,7 +73,7 @@ def _to_summary(c: Conference) -> ConferenceSummary:
 async def list_conferences(
     client_id: str | None = Query(None),
     result: str | None = Query(None),
-    page: int = Query(1, ge=1),
+    cursor: str | None = Query(None),
     page_size: int = Query(20, ge=1, le=100),
     _=Depends(get_current_user),
     service: ConferenceService = Depends(get_conference_service),
@@ -89,9 +89,14 @@ async def list_conferences(
         result=ConferenceResult(result) if result else None,
     )
 
-    conferences, total = await service.list_conferences(filters, page, page_size)
+    conferences, next_cursor = await service.list_conferences(filters, cursor, page_size)
 
     return ConferenceListResponse(
         data=[_to_summary(c) for c in conferences],
-        pagination=build_pagination(total, page, page_size),
+        pagination=CursorPaginationMeta(
+            page_size=page_size,
+            has_next=next_cursor is not None,
+            has_prev=cursor is not None,
+            next_cursor=next_cursor,
+        ),
     )

@@ -1,9 +1,29 @@
+import math
 from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-from api.schemas.purchase_order import PaginationMeta, build_pagination
+
+class PaginationMeta(BaseModel):
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+def build_pagination(total: int, page: int, page_size: int) -> PaginationMeta:
+    total_pages = max(1, math.ceil(total / page_size))
+    return PaginationMeta(
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
 
 
 class UserCreate(BaseModel):

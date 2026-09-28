@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from domain.models.purchase_order import OrderStatus, PurchaseOrder
 
@@ -15,8 +15,8 @@ class OrderFilters:
 class PurchaseOrderRepository(ABC):
     @abstractmethod
     async def find_many(
-        self, filters: OrderFilters, offset: int, limit: int
-    ) -> tuple[list[PurchaseOrder], int]: ...
+        self, filters: OrderFilters, cursor: str | None, limit: int
+    ) -> tuple[list[PurchaseOrder], str | None]: ...
 
     @abstractmethod
     async def find_by_client_and_number(

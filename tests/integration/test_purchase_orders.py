@@ -70,14 +70,16 @@ async def test_list_returns_empty_when_no_orders(client, auth_headers):
     assert r.status_code == 200
     body = r.json()
     assert body["data"] == []
-    assert body["pagination"]["total"] == 0
+    assert body["pagination"]["has_next"] is False
 
 
 async def test_list_returns_ingested_orders(client, auth_headers):
     await ingest_alfa(client, auth_headers, make_alfa("PO-001"), make_alfa("PO-002"))
     r = await client.get("/api/v1/purchase-orders", headers=auth_headers)
     assert r.status_code == 200
-    assert r.json()["pagination"]["total"] == 2
+    body = r.json()
+    assert len(body["data"]) == 2
+    assert body["pagination"]["has_next"] is False
 
 
 async def test_filter_by_client_id(client, auth_headers):
@@ -87,7 +89,7 @@ async def test_filter_by_client_id(client, auth_headers):
     r = await client.get("/api/v1/purchase-orders?client_id=alfa", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
-    assert body["pagination"]["total"] == 1
+    assert len(body["data"]) == 1
     assert body["data"][0]["client_id"] == "alfa"
 
 
@@ -100,7 +102,7 @@ async def test_filter_by_status_open(client, auth_headers):
     r = await client.get("/api/v1/purchase-orders?status=open", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
-    assert body["pagination"]["total"] == 1
+    assert len(body["data"]) == 1
     assert body["data"][0]["status"] == "open"
 
 
@@ -116,7 +118,7 @@ async def test_filter_by_vendor_tax_id(client, auth_headers):
     )
     assert r.status_code == 200
     body = r.json()
-    assert body["pagination"]["total"] == 1
+    assert len(body["data"]) == 1
     assert body["data"][0]["vendor_tax_id"] == "99999999000199"
 
 
@@ -131,7 +133,7 @@ async def test_filter_has_pending_true(client, auth_headers):
     r = await client.get("/api/v1/purchase-orders?has_pending=true", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
-    assert body["pagination"]["total"] == 1
+    assert len(body["data"]) == 1
     assert body["data"][0]["po_number"] == "PO-001"
 
 
@@ -144,7 +146,7 @@ async def test_filter_has_pending_false(client, auth_headers):
     r = await client.get("/api/v1/purchase-orders?has_pending=false", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
-    assert body["pagination"]["total"] == 1
+    assert len(body["data"]) == 1
     assert body["data"][0]["po_number"] == "PO-002"
 
 
@@ -152,23 +154,33 @@ async def test_pagination_page_size(client, auth_headers):
     orders = [make_alfa(f"PO-{i:03d}") for i in range(1, 6)]
     await ingest_alfa(client, auth_headers, *orders)
 
-    r = await client.get("/api/v1/purchase-orders?page=1&page_size=2", headers=auth_headers)
+    r = await client.get("/api/v1/purchase-orders?page_size=2", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert len(body["data"]) == 2
-    assert body["pagination"]["total"] == 5
-    assert body["pagination"]["total_pages"] == 3
     assert body["pagination"]["has_next"] is True
     assert body["pagination"]["has_prev"] is False
+    assert body["pagination"]["next_cursor"] is not None
 
 
 async def test_pagination_last_page(client, auth_headers):
     orders = [make_alfa(f"PO-{i:03d}") for i in range(1, 6)]
     await ingest_alfa(client, auth_headers, *orders)
 
-    r = await client.get("/api/v1/purchase-orders?page=3&page_size=2", headers=auth_headers)
-    assert r.status_code == 200
-    body = r.json()
+    # Navega até a última página usando cursores
+    cursor = None
+    body = None
+    for _ in range(3):  # 5 itens com page_size=2 → 3 páginas
+        url = f"/api/v1/purchase-orders?page_size=2"
+        if cursor:
+            url += f"&cursor={cursor}"
+        r = await client.get(url, headers=auth_headers)
+        assert r.status_code == 200
+        body = r.json()
+        cursor = body["pagination"]["next_cursor"]
+        if not body["pagination"]["has_next"]:
+            break
+
     assert len(body["data"]) == 1
     assert body["pagination"]["has_next"] is False
     assert body["pagination"]["has_prev"] is True
@@ -182,14 +194,13 @@ async def test_filters_combined_with_pagination(client, auth_headers):
         make_alfa("PO-003", status="closed"),
     )
     r = await client.get(
-        "/api/v1/purchase-orders?status=open&page=1&page_size=1",
+        "/api/v1/purchase-orders?status=open&page_size=1",
         headers=auth_headers,
     )
     assert r.status_code == 200
     body = r.json()
     assert len(body["data"]) == 1
-    assert body["pagination"]["total"] == 2
-    assert body["pagination"]["total_pages"] == 2
+    assert body["pagination"]["has_next"] is True  # 2 open, page_size=1 → tem próxima
 
 
 async def test_page_size_above_max_returns_422(client, auth_headers):

@@ -16,5 +16,5 @@ class ConferenceRepository(ABC):
 
     @abstractmethod
     async def find_many(
-        self, filters: ConferenceFilters, offset: int, limit: int
-    ) -> tuple[list[Conference], int]: ...
+        self, filters: ConferenceFilters, cursor: str | None, limit: int
+    ) -> tuple[list[Conference], str | None]: ...

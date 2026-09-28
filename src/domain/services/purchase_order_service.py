@@ -13,22 +13,22 @@ class PurchaseOrderService:
     async def list_orders(
         self,
         filters: OrderFilters,
-        page: int,
+        cursor: str | None,
         page_size: int,
-    ) -> tuple[list[PurchaseOrder], int]:
-        offset = (page - 1) * page_size
-        orders, total = await self._repo.find_many(filters, offset, page_size)
+    ) -> tuple[list[PurchaseOrder], str | None]:
+        orders, next_cursor = await self._repo.find_many(filters, cursor, page_size)
         log.info(
             "order.list",
-            total=total,
-            page=page,
+            count=len(orders),
+            has_next=next_cursor is not None,
+            has_prev=cursor is not None,
             page_size=page_size,
             filter_client_id=filters.client_id,
             filter_status=filters.status,
             filter_vendor_tax_id=filters.vendor_tax_id,
             filter_has_pending=filters.has_pending,
         )
-        return orders, total
+        return orders, next_cursor
 
     async def get_order(
         self,

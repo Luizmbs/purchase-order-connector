@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, exists, func, select
+from sqlalchemy import and_, delete, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,6 +12,7 @@ from adapters.persistence.cache_service import CacheService
 from adapters.persistence.sqlalchemy_models import PurchaseOrderItemModel, PurchaseOrderModel
 from domain.models.purchase_order import OrderStatus, PurchaseOrder, PurchaseOrderItem
 from domain.ports.outbound.purchase_order_repository import OrderFilters, PurchaseOrderRepository
+from infrastructure.cursor import decode_cursor, encode_cursor
 
 log = structlog.get_logger()
 
@@ -93,36 +94,51 @@ class PostgresPurchaseOrderRepository(PurchaseOrderRepository):
         self._cache = cache
 
     async def find_many(
-        self, filters: OrderFilters, offset: int, limit: int
-    ) -> tuple[list[PurchaseOrder], int]:
-        base = select(PurchaseOrderModel)
+        self, filters: OrderFilters, cursor: str | None, limit: int
+    ) -> tuple[list[PurchaseOrder], str | None]:
+        query = select(PurchaseOrderModel)
 
         if filters.client_id:
-            base = base.where(PurchaseOrderModel.client_id == filters.client_id)
+            query = query.where(PurchaseOrderModel.client_id == filters.client_id)
         if filters.vendor_tax_id:
-            base = base.where(PurchaseOrderModel.vendor_tax_id == filters.vendor_tax_id)
+            query = query.where(PurchaseOrderModel.vendor_tax_id == filters.vendor_tax_id)
         if filters.status:
-            base = base.where(PurchaseOrderModel.status == filters.status.value)
+            query = query.where(PurchaseOrderModel.status == filters.status.value)
         if filters.has_pending is not None:
             pending_exists = exists().where(
                 PurchaseOrderItemModel.purchase_order_id == PurchaseOrderModel.id,
                 PurchaseOrderItemModel.quantity_ordered - PurchaseOrderItemModel.quantity_received > 0,
             )
-            base = base.where(pending_exists if filters.has_pending else ~pending_exists)
+            query = query.where(pending_exists if filters.has_pending else ~pending_exists)
 
-        total_result = await self._session.execute(select(func.count()).select_from(base.subquery()))
-        total = total_result.scalar_one()
+        if cursor:
+            cursor_ts, cursor_id = decode_cursor(cursor)
+            # Keyset: registros mais antigos que o cursor (ordem DESC)
+            query = query.where(
+                or_(
+                    PurchaseOrderModel.loaded_at < cursor_ts,
+                    and_(
+                        PurchaseOrderModel.loaded_at == cursor_ts,
+                        PurchaseOrderModel.id < cursor_id,
+                    ),
+                )
+            )
 
+        # Busca limit+1 para saber se existe próxima página sem COUNT(*)
         query = (
-            base.options(selectinload(PurchaseOrderModel.items))
-            .order_by(PurchaseOrderModel.loaded_at.desc())
-            .offset(offset)
-            .limit(limit)
+            query.options(selectinload(PurchaseOrderModel.items))
+            .order_by(PurchaseOrderModel.loaded_at.desc(), PurchaseOrderModel.id.desc())
+            .limit(limit + 1)
         )
         result = await self._session.execute(query)
-        rows = result.scalars().all()
+        rows = list(result.scalars().all())
 
-        return [self._to_domain(row) for row in rows], total
+        has_next = len(rows) > limit
+        if has_next:
+            rows = rows[:limit]
+
+        next_cursor = encode_cursor(rows[-1].loaded_at, rows[-1].id) if has_next else None
+        return [self._to_domain(row) for row in rows], next_cursor
 
     async def find_by_client_and_number(
         self, client_id: str, po_number: str

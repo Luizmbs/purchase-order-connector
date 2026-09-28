@@ -1,10 +1,11 @@
-from sqlalchemy import func, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from adapters.persistence.sqlalchemy_models import ConferenceDivergenceModel, ConferenceModel
 from domain.models.conference import Conference, ConferenceDivergence, ConferenceResult, DivergenceType
 from domain.ports.outbound.conference_repository import ConferenceFilters, ConferenceRepository
+from infrastructure.cursor import decode_cursor, encode_cursor
 
 
 class PostgresConferenceRepository(ConferenceRepository):
@@ -41,28 +42,43 @@ class PostgresConferenceRepository(ConferenceRepository):
         await self._session.commit()
 
     async def find_many(
-        self, filters: ConferenceFilters, offset: int, limit: int
-    ) -> tuple[list[Conference], int]:
-        base = select(ConferenceModel)
+        self, filters: ConferenceFilters, cursor: str | None, limit: int
+    ) -> tuple[list[Conference], str | None]:
+        query = select(ConferenceModel)
 
         if filters.client_id:
-            base = base.where(ConferenceModel.client_id == filters.client_id)
+            query = query.where(ConferenceModel.client_id == filters.client_id)
         if filters.result:
-            base = base.where(ConferenceModel.result == filters.result.value)
+            query = query.where(ConferenceModel.result == filters.result.value)
 
-        total_result = await self._session.execute(select(func.count()).select_from(base.subquery()))
-        total = total_result.scalar_one()
+        if cursor:
+            cursor_ts, cursor_id = decode_cursor(cursor)
+            # Keyset: registros mais antigos que o cursor (ordem DESC)
+            query = query.where(
+                or_(
+                    ConferenceModel.checked_at < cursor_ts,
+                    and_(
+                        ConferenceModel.checked_at == cursor_ts,
+                        ConferenceModel.id < cursor_id,
+                    ),
+                )
+            )
 
+        # Busca limit+1 para saber se existe próxima página sem COUNT(*)
         query = (
-            base.options(selectinload(ConferenceModel.divergences))
-            .order_by(ConferenceModel.checked_at.desc())
-            .offset(offset)
-            .limit(limit)
+            query.options(selectinload(ConferenceModel.divergences))
+            .order_by(ConferenceModel.checked_at.desc(), ConferenceModel.id.desc())
+            .limit(limit + 1)
         )
         result = await self._session.execute(query)
-        rows = result.scalars().all()
+        rows = list(result.scalars().all())
 
-        return [self._to_domain(row) for row in rows], total
+        has_next = len(rows) > limit
+        if has_next:
+            rows = rows[:limit]
+
+        next_cursor = encode_cursor(rows[-1].checked_at, rows[-1].id) if has_next else None
+        return [self._to_domain(row) for row in rows], next_cursor
 
     def _to_domain(self, orm: ConferenceModel) -> Conference:
         return Conference(

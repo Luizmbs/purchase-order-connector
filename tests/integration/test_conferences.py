@@ -211,7 +211,9 @@ async def test_conference_saved_to_db(client, auth_headers):
 
     r = await client.get("/api/v1/conferences", headers=auth_headers)
     assert r.status_code == 200
-    assert r.json()["pagination"]["total"] == 1
+    body = r.json()
+    assert len(body["data"]) == 1
+    assert body["pagination"]["has_next"] is False
 
 
 async def test_rejected_conference_saved_with_divergences(client, auth_headers):
@@ -223,8 +225,9 @@ async def test_rejected_conference_saved_with_divergences(client, auth_headers):
 
     r = await client.get("/api/v1/conferences?result=rejected", headers=auth_headers)
     assert r.status_code == 200
-    assert r.json()["pagination"]["total"] == 1
-    assert r.json()["data"][0]["divergences_count"] == 1
+    body = r.json()
+    assert len(body["data"]) == 1
+    assert body["data"][0]["divergences_count"] == 1
 
 
 # ── GET /conferences ──────────────────────────────────────────────────────────
@@ -236,7 +239,9 @@ async def test_list_all_conferences(client, auth_headers):
 
     r = await client.get("/api/v1/conferences", headers=auth_headers)
     assert r.status_code == 200
-    assert r.json()["pagination"]["total"] == 2
+    body = r.json()
+    assert len(body["data"]) == 2
+    assert body["pagination"]["has_next"] is False
 
 
 async def test_filter_by_result_rejected(client, auth_headers):
@@ -250,7 +255,7 @@ async def test_filter_by_result_rejected(client, auth_headers):
     r = await client.get("/api/v1/conferences?result=rejected", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
-    assert body["pagination"]["total"] == 1
+    assert len(body["data"]) == 1
     assert body["data"][0]["result"] == "rejected"
 
 
@@ -268,8 +273,9 @@ async def test_filter_by_client_id(client, auth_headers):
 
     r = await client.get("/api/v1/conferences?client_id=alfa", headers=auth_headers)
     assert r.status_code == 200
-    assert r.json()["pagination"]["total"] == 1
-    assert r.json()["data"][0]["client_id"] == "alfa"
+    body = r.json()
+    assert len(body["data"]) == 1
+    assert body["data"][0]["client_id"] == "alfa"
 
 
 async def test_pagination_works(client, auth_headers):
@@ -281,13 +287,13 @@ async def test_pagination_works(client, auth_headers):
             make_invoice(invoice_number=f"NF-{i:03d}"),
         )
 
-    r = await client.get("/api/v1/conferences?page=1&page_size=2", headers=auth_headers)
+    r = await client.get("/api/v1/conferences?page_size=2", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert len(body["data"]) == 2
-    assert body["pagination"]["total"] == 3
-    assert body["pagination"]["total_pages"] == 2
     assert body["pagination"]["has_next"] is True
+    assert body["pagination"]["has_prev"] is False
+    assert body["pagination"]["next_cursor"] is not None
 
 
 async def test_divergence_types_in_summary(client, auth_headers):

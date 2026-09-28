@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 
 from api.dependencies import get_current_user
 from api.schemas.purchase_order import (
+    CursorPaginationMeta,
     PurchaseOrderDetail,
     PurchaseOrderListResponse,
     PurchaseOrderSummary,
-    build_pagination,
 )
 from domain.models.purchase_order import OrderStatus, PurchaseOrder
 from domain.ports.outbound.purchase_order_repository import OrderFilters
@@ -39,7 +39,7 @@ async def list_purchase_orders(
     vendor_tax_id: str | None = Query(None),
     status: str | None = Query(None),
     has_pending: bool | None = Query(None),
-    page: int = Query(1, ge=1),
+    cursor: str | None = Query(None),
     page_size: int = Query(20, ge=1, le=100),
     current_user=Depends(get_current_user),
     service: PurchaseOrderService = Depends(get_purchase_order_service),
@@ -57,11 +57,16 @@ async def list_purchase_orders(
         has_pending=has_pending,
     )
 
-    orders, total = await service.list_orders(filters, page, page_size)
+    orders, next_cursor = await service.list_orders(filters, cursor, page_size)
 
     return PurchaseOrderListResponse(
         data=[_to_summary(o) for o in orders],
-        pagination=build_pagination(total, page, page_size),
+        pagination=CursorPaginationMeta(
+            page_size=page_size,
+            has_next=next_cursor is not None,
+            has_prev=cursor is not None,
+            next_cursor=next_cursor,
+        ),
     )
 
 
