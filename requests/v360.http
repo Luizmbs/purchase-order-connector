@@ -78,6 +78,60 @@ Content-Type: application/json
 }
 
 
+### Ingerir Gama Logística (JSON flat — array de linhas por item)
+POST {{baseUrl}}/ingest/gama
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+[
+  {
+    "ped": "GL-778",
+    "item": 1,
+    "cnpj_fornecedor": "34567890000112",
+    "nome_fornecedor": "Transportes Ideal ME",
+    "dt_criacao": 1786752000,
+    "cod_mat": "TRP-01",
+    "desc_mat": "Pallet de madeira",
+    "um": "CX",
+    "fator_conv": 12,
+    "qtd_ped": 10,
+    "qtd_rec": 2,
+    "preco_unit_centavos": 120000,
+    "situacao": 1
+  },
+  {
+    "ped": "GL-778",
+    "item": 2,
+    "cnpj_fornecedor": "34567890000112",
+    "nome_fornecedor": "Transportes Ideal ME",
+    "dt_criacao": 1786752000,
+    "cod_mat": "TRP-09",
+    "desc_mat": "Caixa organizadora",
+    "um": "CX",
+    "fator_conv": 3,
+    "qtd_ped": 4,
+    "qtd_rec": 0,
+    "preco_unit_centavos": 10000,
+    "situacao": 1
+  },
+  {
+    "ped": "GL-779",
+    "item": 1,
+    "cnpj_fornecedor": "56789012000134",
+    "nome_fornecedor": "Armazéns Rio Claro Ltda",
+    "dt_criacao": 1784160000,
+    "cod_mat": "ARM-10",
+    "desc_mat": "Estrado metálico",
+    "um": "UN",
+    "fator_conv": 1,
+    "qtd_ped": 100,
+    "qtd_rec": 100,
+    "preco_unit_centavos": 3500,
+    "situacao": 2
+  }
+]
+
+
 ### Ingerir Beta Alimentos (multipart — requer dois arquivos CSV)
 # Salve os arquivos abaixo como cabecalho.csv e itens.csv e ajuste os caminhos
 POST {{baseUrl}}/ingest/beta
@@ -112,15 +166,23 @@ GET {{baseUrl}}/purchase-orders?status=open
 Authorization: Bearer {{token}}
 
 ### Listar com saldo pendente
-GET {{baseUrl}}/purchase-orders?has_pending=true&page=1&page_size=5
+GET {{baseUrl}}/purchase-orders?has_pending=true&page_size=5
 Authorization: Bearer {{token}}
 
 ### Filtrar por cliente + status + paginação
-GET {{baseUrl}}/purchase-orders?client_id=alfa&status=open&page=1&page_size=5
+GET {{baseUrl}}/purchase-orders?client_id=alfa&status=open&page_size=5
 Authorization: Bearer {{token}}
 
-### Detalhe de um pedido
+### Próxima página (substituir cursor pelo next_cursor da resposta anterior)
+# GET {{baseUrl}}/purchase-orders?client_id=alfa&status=open&page_size=5&cursor=COLE_O_CURSOR_AQUI
+# Authorization: Bearer {{token}}
+
+### Detalhe de um pedido Alfa
 GET {{baseUrl}}/purchase-orders/alfa/4500001234
+Authorization: Bearer {{token}}
+
+### Detalhe de um pedido Gama
+GET {{baseUrl}}/purchase-orders/gama/GL-778
 Authorization: Bearer {{token}}
 
 # ── 4. CONFERÊNCIAS ──────────────────────────────────────────
