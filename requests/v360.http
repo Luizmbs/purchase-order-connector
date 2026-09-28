@@ -189,7 +189,34 @@ Content-Type: application/json
   "active": false
 }
 
-# ── 6. HEALTH ────────────────────────────────────────────────
+# ── 6. ADMIN — USUÁRIOS ──────────────────────────────────────
+
+### Listar usuários
+GET {{baseUrl}}/admin/users
+Authorization: Bearer {{token}}
+
+### Criar usuário
+POST {{baseUrl}}/admin/users
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "operador1",
+  "email": "op1@v360.com",
+  "password": "senha1234",
+  "role": "operator"
+}
+
+### Desativar usuário
+PATCH {{baseUrl}}/admin/users/COLE_O_USER_ID_AQUI
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+# ── 7. HEALTH ────────────────────────────────────────────────
 
 ### Health check
 GET http://localhost:8000/health

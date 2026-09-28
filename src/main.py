@@ -6,6 +6,7 @@ from api.middleware.logging import LoggingMiddleware
 from api.routers.auth import router as auth_router
 from api.routers.health import router as health_router
 from api.routers.admin_clients import router as admin_clients_router
+from api.routers.admin_users import router as admin_users_router
 from api.routers.conferences import router as conferences_router
 from api.routers.ingest import router as ingest_router
 from api.routers.purchase_orders import router as purchase_orders_router
@@ -32,3 +33,4 @@ app.include_router(ingest_router)
 app.include_router(purchase_orders_router)
 app.include_router(conferences_router)
 app.include_router(admin_clients_router)
+app.include_router(admin_users_router)
