@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from adapters.clients.alfa.adapter import AlfaAdapter
+from adapters.clients.base import ParseResult
 from domain.models.purchase_order import OrderStatus
 
 
@@ -41,74 +42,84 @@ def adapter() -> AlfaAdapter:
     return AlfaAdapter()
 
 
+# ── ParseResult ───────────────────────────────────────────────────────────────
+
+def test_parse_returns_parse_result(adapter):
+    result = adapter.parse({"purchase_orders": [VALID_ORDER]})
+    assert isinstance(result, ParseResult)
+
+
+def test_parse_never_has_warnings(adapter):
+    second = {**VALID_ORDER, "po_number": "4500001235"}
+    result = adapter.parse({"purchase_orders": [VALID_ORDER, second]})
+    assert result.warnings == []
+
+
 # ── Parse correto ─────────────────────────────────────────────────────────────
 
 def test_parse_single_order_with_two_items(adapter):
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER]})
-    assert len(orders) == 1
-    assert len(orders[0].items) == 2
+    result = adapter.parse({"purchase_orders": [VALID_ORDER]})
+    assert len(result.orders) == 1
+    assert len(result.orders[0].items) == 2
 
 
 def test_parse_multiple_orders(adapter):
     second = {**VALID_ORDER, "po_number": "4500001235"}
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER, second]})
-    assert len(orders) == 2
+    result = adapter.parse({"purchase_orders": [VALID_ORDER, second]})
+    assert len(result.orders) == 2
 
 
 def test_parse_empty_list(adapter):
-    orders = adapter.parse({"purchase_orders": []})
-    assert orders == []
+    result = adapter.parse({"purchase_orders": []})
+    assert result.orders == []
 
 
 # ── Normalização de campos ────────────────────────────────────────────────────
 
 def test_created_at_parsed_as_date(adapter):
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER]})
-    assert orders[0].created_at == date(2026, 8, 5)
+    result = adapter.parse({"purchase_orders": [VALID_ORDER]})
+    assert result.orders[0].created_at == date(2026, 8, 5)
 
 
 def test_quantities_as_decimal(adapter):
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER]})
-    item = orders[0].items[0]
+    result = adapter.parse({"purchase_orders": [VALID_ORDER]})
+    item = result.orders[0].items[0]
     assert item.quantity_ordered == Decimal("100")
     assert item.quantity_received == Decimal("60")
 
 
 def test_unit_price_as_decimal(adapter):
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER]})
-    item = orders[0].items[0]
+    result = adapter.parse({"purchase_orders": [VALID_ORDER]})
+    item = result.orders[0].items[0]
     assert item.unit_price == Decimal("45.9")
 
 
 def test_vendor_tax_id_preserved(adapter):
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER]})
-    assert orders[0].vendor_tax_id == "23456789000101"
+    result = adapter.parse({"purchase_orders": [VALID_ORDER]})
+    assert result.orders[0].vendor_tax_id == "23456789000101"
 
 
 def test_item_created_at_is_none(adapter):
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER]})
-    for item in orders[0].items:
+    result = adapter.parse({"purchase_orders": [VALID_ORDER]})
+    for item in result.orders[0].items:
         assert item.item_created_at is None
 
 
 # ── Mapeamento de status ──────────────────────────────────────────────────────
 
 def test_status_open_mapped(adapter):
-    order = {**VALID_ORDER, "status": "open"}
-    orders = adapter.parse({"purchase_orders": [order]})
-    assert orders[0].status == OrderStatus.OPEN
+    result = adapter.parse({"purchase_orders": [{**VALID_ORDER, "status": "open"}]})
+    assert result.orders[0].status == OrderStatus.OPEN
 
 
 def test_status_closed_mapped(adapter):
-    order = {**VALID_ORDER, "status": "closed"}
-    orders = adapter.parse({"purchase_orders": [order]})
-    assert orders[0].status == OrderStatus.CLOSED
+    result = adapter.parse({"purchase_orders": [{**VALID_ORDER, "status": "closed"}]})
+    assert result.orders[0].status == OrderStatus.CLOSED
 
 
 def test_status_blocked_mapped(adapter):
-    order = {**VALID_ORDER, "status": "blocked"}
-    orders = adapter.parse({"purchase_orders": [order]})
-    assert orders[0].status == OrderStatus.BLOCKED
+    result = adapter.parse({"purchase_orders": [{**VALID_ORDER, "status": "blocked"}]})
+    assert result.orders[0].status == OrderStatus.BLOCKED
 
 
 # ── Erros ─────────────────────────────────────────────────────────────────────
@@ -156,6 +167,6 @@ def test_missing_unit_price_raises_value_error(adapter):
 
 def test_client_id_is_alfa(adapter):
     second = {**VALID_ORDER, "po_number": "4500001235"}
-    orders = adapter.parse({"purchase_orders": [VALID_ORDER, second]})
-    for order in orders:
+    result = adapter.parse({"purchase_orders": [VALID_ORDER, second]})
+    for order in result.orders:
         assert order.client_id == "alfa"
