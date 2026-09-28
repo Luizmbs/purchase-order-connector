@@ -5,3 +5,4 @@ class IngestionResponse(BaseModel):
     ingested: int
     updated: int
     errors: list[dict]
+    warnings: list[str]

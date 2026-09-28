@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from adapters.clients.base import ClientAdapter, InputFormat
+from adapters.clients.base import ClientAdapter, InputFormat, ParseResult
 from adapters.clients.registry import ClientAdapterRegistry
 from domain.models.purchase_order import OrderStatus, PurchaseOrder, PurchaseOrderItem
 
@@ -17,9 +17,9 @@ class AlfaAdapter(ClientAdapter):
     CLIENT_ID = "alfa"
     input_format = InputFormat.JSON
 
-    def parse(self, raw_data: dict) -> list[PurchaseOrder]:
+    def parse(self, raw_data: dict) -> ParseResult:
         orders = raw_data.get("purchase_orders", [])
-        return [self._parse_order(o) for o in orders]
+        return ParseResult(orders=[self._parse_order(o) for o in orders])
 
     def _parse_order(self, data: dict) -> PurchaseOrder:
         po_number = data.get("po_number")

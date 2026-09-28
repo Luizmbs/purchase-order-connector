@@ -52,4 +52,5 @@ async def ingest(
         ingested=result.ingested,
         updated=result.updated,
         errors=result.errors,
+        warnings=result.warnings,
     )

@@ -8,10 +8,11 @@ log = structlog.get_logger()
 
 
 class IngestionResult:
-    def __init__(self, ingested: int, updated: int, errors: list[dict]):
+    def __init__(self, ingested: int, updated: int, errors: list[dict], warnings: list[str]):
         self.ingested = ingested
         self.updated = updated
         self.errors = errors
+        self.warnings = warnings
 
 
 class IngestionService:
@@ -20,14 +21,14 @@ class IngestionService:
         self._cache = cache
 
     async def ingest(self, adapter: ClientAdapter, raw_data) -> IngestionResult:
-        orders = adapter.parse(raw_data)
+        parse_result = adapter.parse(raw_data)
 
         ingested = 0
         updated = 0
         errors = []
         client_id = None
 
-        for order in orders:
+        for order in parse_result.orders:
             client_id = order.client_id
             try:
                 existing, _ = await self._repo.find_by_client_and_number(
@@ -53,4 +54,9 @@ class IngestionService:
             errors=len(errors),
         )
 
-        return IngestionResult(ingested=ingested, updated=updated, errors=errors)
+        return IngestionResult(
+            ingested=ingested,
+            updated=updated,
+            errors=errors,
+            warnings=parse_result.warnings,
+        )

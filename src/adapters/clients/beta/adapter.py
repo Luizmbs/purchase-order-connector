@@ -6,7 +6,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
-from adapters.clients.base import ClientAdapter, InputFormat
+from adapters.clients.base import ClientAdapter, InputFormat, ParseResult
 from adapters.clients.registry import ClientAdapterRegistry
 from domain.models.purchase_order import OrderStatus, PurchaseOrder, PurchaseOrderItem
 
@@ -21,24 +21,35 @@ class BetaAdapter(ClientAdapter):
     CLIENT_ID = "beta"
     input_format = InputFormat.MULTIPART
 
-    def parse(self, raw_data: dict) -> list[PurchaseOrder]:
+    def parse(self, raw_data: dict) -> ParseResult:
         cabecalho_csv = raw_data.get("cabecalho", "")
         itens_csv = raw_data.get("itens", "")
 
         headers = list(csv.DictReader(io.StringIO(cabecalho_csv), delimiter=";"))
         item_rows = list(csv.DictReader(io.StringIO(itens_csv), delimiter=";"))
 
+        known_po_numbers = {row.get("NUMERO_PEDIDO", "").strip() for row in headers}
+
         items_by_po: dict[str, list] = defaultdict(list)
+        warnings: list[str] = []
         for row in item_rows:
             po_number = row.get("NUMERO_PEDIDO", "").strip()
-            items_by_po[po_number].append(row)
+            if po_number not in known_po_numbers:
+                material = row.get("CODIGO_MATERIAL", "?").strip()
+                line = row.get("ITEM", "?").strip()
+                warnings.append(
+                    f"Item linha {line} (NUMERO_PEDIDO={po_number}, material={material})"
+                    f" descartado: pedido não encontrado no cabeçalho"
+                )
+            else:
+                items_by_po[po_number].append(row)
 
         orders = []
         for row in headers:
             order = self._parse_order(row, items_by_po)
             orders.append(order)
 
-        return orders
+        return ParseResult(orders=orders, warnings=warnings)
 
     def _parse_order(self, row: dict, items_by_po: dict) -> PurchaseOrder:
         po_number = row.get("NUMERO_PEDIDO", "").strip()
