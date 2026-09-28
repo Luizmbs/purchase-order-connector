@@ -6,7 +6,7 @@ import adapters.clients  # noqa: F401 — garante registro dos adapters
 from adapters.clients.base import ClientAdapter, InputFormat
 from adapters.clients.registry import ClientAdapterRegistry
 from api.dependencies import get_current_user
-from api.schemas.ingest import IngestionResponse
+from api.schemas.ingest import FieldChangeResponse, IngestionResponse, OrderUpdateResponse
 from domain.services.ingestion_service import IngestionService
 from infrastructure.container import get_ingestion_service
 
@@ -53,4 +53,15 @@ async def ingest(
         updated=result.updated,
         errors=result.errors,
         warnings=result.warnings,
+        updates=[
+            OrderUpdateResponse(
+                po_number=u.po_number,
+                client_id=u.client_id,
+                changes=[
+                    FieldChangeResponse(field=c.field, before=c.before, after=c.after)
+                    for c in u.changes
+                ],
+            )
+            for u in result.updates
+        ],
     )

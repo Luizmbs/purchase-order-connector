@@ -1,18 +1,97 @@
+from dataclasses import dataclass, field
+
 import structlog
 
 from adapters.clients.base import ClientAdapter
 from adapters.persistence.cache_service import CacheService
+from domain.models.purchase_order import PurchaseOrder
 from domain.ports.outbound.purchase_order_repository import PurchaseOrderRepository
 
 log = structlog.get_logger()
 
 
+@dataclass
+class FieldChange:
+    field: str
+    before: str
+    after: str
+
+
+@dataclass
+class OrderUpdate:
+    po_number: str
+    client_id: str
+    changes: list[FieldChange] = field(default_factory=list)
+
+
+def _diff_orders(existing: PurchaseOrder, new_order: PurchaseOrder) -> list[FieldChange]:
+    changes: list[FieldChange] = []
+
+    if existing.status != new_order.status:
+        changes.append(FieldChange("status", existing.status.value, new_order.status.value))
+    if existing.vendor_tax_id != new_order.vendor_tax_id:
+        changes.append(FieldChange("vendor_tax_id", existing.vendor_tax_id, new_order.vendor_tax_id))
+    if existing.vendor_name != new_order.vendor_name:
+        changes.append(FieldChange("vendor_name", str(existing.vendor_name), str(new_order.vendor_name)))
+    if existing.currency != new_order.currency:
+        changes.append(FieldChange("currency", existing.currency, new_order.currency))
+
+    existing_by_line = {item.line: item for item in existing.items}
+    new_by_line = {item.line: item for item in new_order.items}
+
+    for line, new_item in new_by_line.items():
+        if line not in existing_by_line:
+            changes.append(FieldChange(
+                f"item.linha_{line}",
+                "ausente",
+                f"adicionado (material={new_item.material})",
+            ))
+        else:
+            old = existing_by_line[line]
+            if old.quantity_ordered != new_item.quantity_ordered:
+                changes.append(FieldChange(
+                    f"item.linha_{line}.quantity_ordered",
+                    str(old.quantity_ordered),
+                    str(new_item.quantity_ordered),
+                ))
+            if old.quantity_received != new_item.quantity_received:
+                changes.append(FieldChange(
+                    f"item.linha_{line}.quantity_received",
+                    str(old.quantity_received),
+                    str(new_item.quantity_received),
+                ))
+            if old.unit_price != new_item.unit_price:
+                changes.append(FieldChange(
+                    f"item.linha_{line}.unit_price",
+                    str(old.unit_price),
+                    str(new_item.unit_price),
+                ))
+
+    for line, old_item in existing_by_line.items():
+        if line not in new_by_line:
+            changes.append(FieldChange(
+                f"item.linha_{line}",
+                f"material={old_item.material}",
+                "removido",
+            ))
+
+    return changes
+
+
 class IngestionResult:
-    def __init__(self, ingested: int, updated: int, errors: list[dict], warnings: list[str]):
+    def __init__(
+        self,
+        ingested: int,
+        updated: int,
+        errors: list[dict],
+        warnings: list[str],
+        updates: list[OrderUpdate],
+    ):
         self.ingested = ingested
         self.updated = updated
         self.errors = errors
         self.warnings = warnings
+        self.updates = updates
 
 
 class IngestionService:
@@ -26,6 +105,7 @@ class IngestionService:
         ingested = 0
         updated = 0
         errors = []
+        order_updates: list[OrderUpdate] = []
         client_id = None
 
         for order in parse_result.orders:
@@ -37,6 +117,11 @@ class IngestionService:
                 await self._repo.upsert(order)
                 if existing:
                     updated += 1
+                    order_updates.append(OrderUpdate(
+                        po_number=order.po_number,
+                        client_id=order.client_id,
+                        changes=_diff_orders(existing, order),
+                    ))
                 else:
                     ingested += 1
             except Exception as e:
@@ -59,4 +144,5 @@ class IngestionService:
             updated=updated,
             errors=errors,
             warnings=parse_result.warnings,
+            updates=order_updates,
         )
