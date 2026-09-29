@@ -1,5 +1,6 @@
 import os
 import subprocess
+from pathlib import Path
 
 import asyncpg
 import pytest
@@ -14,8 +15,12 @@ from infrastructure.database import get_redis, get_session
 from main import app
 
 TEST_DB_NAME = "v360_test"
-TEST_DATABASE_URL = f"postgresql+asyncpg://postgres:postgres@postgres:5432/{TEST_DB_NAME}"
-TEST_REDIS_URL = "redis://redis:6379/1"
+_PG_HOST = os.getenv("POSTGRES_HOST", "postgres")
+_REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+_PROJECT_ROOT = str(Path(__file__).parent.parent.parent)
+
+TEST_DATABASE_URL = f"postgresql+asyncpg://postgres:postgres@{_PG_HOST}:5432/{TEST_DB_NAME}"
+TEST_REDIS_URL = f"redis://{_REDIS_HOST}:6379/1"
 
 # NullPool: each request opens and closes its own connection; prevents reuse of
 # corrupted connections between tests.
@@ -46,7 +51,7 @@ async def setup_test_db():
     """Cria v360_test se não existir e aplica as migrações."""
     # Conecta ao banco de manutenção para criar o banco de testes
     conn = await asyncpg.connect(
-        "postgresql://postgres:postgres@postgres:5432/postgres"
+        f"postgresql://postgres:postgres@{_PG_HOST}:5432/postgres"
     )
     exists = await conn.fetchval(
         "SELECT 1 FROM pg_database WHERE datname = $1", TEST_DB_NAME
@@ -60,14 +65,14 @@ async def setup_test_db():
     # Roda alembic upgrade head contra v360_test
     env = {
         **os.environ,
-        "DATABASE_URL": f"postgresql+asyncpg://postgres:postgres@postgres:5432/{TEST_DB_NAME}",
+        "DATABASE_URL": f"postgresql+asyncpg://postgres:postgres@{_PG_HOST}:5432/{TEST_DB_NAME}",
     }
     result = subprocess.run(
         ["python", "-m", "alembic", "upgrade", "head"],
         env=env,
         capture_output=True,
         text=True,
-        cwd="/app",
+        cwd=_PROJECT_ROOT,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Alembic falhou no banco de teste:\n{result.stderr}")

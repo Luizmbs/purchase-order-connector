@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/v360
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-secret-key
+        run: pytest tests/unit/ -v
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Map service hostnames
+        run: |
+          echo "127.0.0.1 postgres" | sudo tee -a /etc/hosts
+          echo "127.0.0.1 redis" | sudo tee -a /etc/hosts
+
+      - name: Run integration tests
+        env:
+          PYTHONPATH: src
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/postgres
+          REDIS_URL: redis://redis:6379/0
+          SECRET_KEY: ci-secret-key
+        run: pytest tests/integration/ -v
